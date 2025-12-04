@@ -330,6 +330,16 @@
         />
       </div>
 
+      <div class="form-group">
+        <label for="graphhopperKeyInput" class="form-label">GraphHopper API Key (Optional)</label>
+        <input
+          id="graphhopperKeyInput"
+          class="input"
+          type="text"
+          placeholder="Optional: For enhanced routing features"
+        />
+      </div>
+
       <button id="loadMapBtn" class="button" style="margin-bottom: 0.5rem;">
         <span class="button-icon">🗺️</span>
         <span>Save Key &amp; Show Map</span>
@@ -391,7 +401,10 @@
     // Open Charge Map key is used for fetching charging station data.
     // You paste it in the UI field and we store it here.
     let OCM_API_KEY = '';
+    let GRAPHHOPPER_API_KEY = '';
     const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+    // GraphHopper free tier endpoint (works without API key for basic routing)
+    const GRAPHHOPPER_BASE_URL = 'https://graphhopper.com/api/1/route';
 
     // ========= MAP / APP STATE =========
     let map;
@@ -399,6 +412,7 @@
     let userMarker = null;
     let rangeCircle = null;
     let stationMarkers = [];
+    let currentRoute = null;
 
     const statusEl = document.getElementById('status');
     const rangeInfoEl = document.getElementById('rangeInfo');
@@ -408,10 +422,16 @@
     const calculateBtn = document.getElementById('calculateBtn');
     const loadMapBtn = document.getElementById('loadMapBtn');
     const ocmKeyInput = document.getElementById('apiKeyInput');
+    const graphhopperKeyInput = document.getElementById('graphhopperKeyInput');
 
     // Keep Open Charge Map key in sync with the input
     ocmKeyInput.addEventListener('input', () => {
       OCM_API_KEY = ocmKeyInput.value.trim();
+    });
+
+    // Keep GraphHopper key in sync with the input
+    graphhopperKeyInput.addEventListener('input', () => {
+      GRAPHHOPPER_API_KEY = graphhopperKeyInput.value.trim();
     });
 
     // Also allow pressing Enter in the API key field to show the map
@@ -673,15 +693,192 @@
             <div style="font-size: 0.82rem; color: #4b5563; margin-bottom: 0.35rem;">
               ${escapeHtml(addressParts.join(", ") || "Address not available")}
             </div>
-            <div style="font-size: 0.82rem; color: #111827;">
+            <div style="font-size: 0.82rem; color: #111827; margin-bottom: 0.35rem;">
               <strong>Usage cost:</strong> ${escapeHtml(usageCost)}
             </div>
+            <div style="margin-top: 0.5rem;">
+              <button id="routeBtn-${station.ID}" style="
+                background: linear-gradient(135deg, #38bdf8, #22c55e);
+                color: #0b1120;
+                border: none;
+                border-radius: 6px;
+                padding: 0.4rem 0.8rem;
+                font-size: 0.8rem;
+                font-weight: 600;
+                cursor: pointer;
+                width: 100%;
+                transition: filter 0.2s;
+              " onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter='brightness(1)'">
+                🧭 Get Route
+              </button>
+            </div>
+            <div id="routeInfo-${station.ID}" style="margin-top: 0.5rem; font-size: 0.75rem; color: #4b5563; display: none;"></div>
           </div>
         `;
 
         marker.bindPopup(infoHtml);
+        
+        // Add click handler for route button
+        marker.on('popupopen', () => {
+          const routeBtn = document.getElementById(`routeBtn-${station.ID}`);
+          if (routeBtn) {
+            routeBtn.addEventListener('click', () => {
+              calculateRouteToStation(station, marker);
+            });
+          }
+        });
+
         stationMarkers.push(marker);
       });
+    }
+
+    // ========= GRAPHHOPPER ROUTING =========
+    async function calculateRouteToStation(station, stationMarker) {
+      if (!userMarker) {
+        statusMessage("User location is not set. Cannot calculate route.", "error");
+        return;
+      }
+
+      const startPoint = userMarker.getLatLng();
+      const endPoint = stationMarker.getLatLng();
+
+      statusMessage("Calculating route...", "neutral");
+
+      try {
+        const routeData = await fetchRouteFromGraphHopper(
+          startPoint.lat,
+          startPoint.lng,
+          endPoint.lat,
+          endPoint.lng
+        );
+
+        if (routeData && routeData.paths && routeData.paths.length > 0) {
+          const path = routeData.paths[0];
+          const distanceKm = (path.distance / 1000).toFixed(2);
+          const distanceMiles = (distanceKm * 0.621371).toFixed(2);
+          const timeMinutes = Math.round(path.time / 60000);
+          const timeHours = Math.floor(timeMinutes / 60);
+          const timeMins = timeMinutes % 60;
+          const timeString = timeHours > 0 
+            ? `${timeHours}h ${timeMins}m` 
+            : `${timeMins}m`;
+
+          // Draw route on map
+          // GraphHopper returns points in GeoJSON format: {coordinates: [[lng, lat], ...]}
+          const points = path.points;
+          drawRoute(points);
+
+          // Update popup with route info
+          const routeInfoEl = document.getElementById(`routeInfo-${station.ID}`);
+          if (routeInfoEl) {
+            routeInfoEl.style.display = 'block';
+            routeInfoEl.innerHTML = `
+              <div style="padding: 0.5rem; background: #f3f4f6; border-radius: 6px;">
+                <div style="font-weight: 600; margin-bottom: 0.3rem;">Route Information:</div>
+                <div>Distance: <strong>${distanceMiles} mi</strong> (${distanceKm} km)</div>
+                <div>Estimated Time: <strong>${timeString}</strong></div>
+              </div>
+            `;
+          }
+
+          statusMessage(`Route calculated: ${distanceMiles} mi, ${timeString}`, "success");
+        } else {
+          throw new Error("No route found");
+        }
+      } catch (err) {
+        console.error("Route calculation error:", err);
+        statusMessage("Failed to calculate route. Please try again.", "error");
+      }
+    }
+
+    async function fetchRouteFromGraphHopper(startLat, startLng, endLat, endLng) {
+      // GraphHopper requires multiple 'point' parameters, so we build the URL manually
+      const params = new URLSearchParams({
+        vehicle: 'car',
+        type: 'json',
+        instructions: 'false',
+        calc_points: 'true',
+        points_encoded: 'false' // Get decoded coordinates instead of encoded polyline
+      });
+
+      // Add multiple points (GraphHopper API accepts multiple point parameters)
+      const pointParams = `point=${startLat},${startLng}&point=${endLat},${endLng}`;
+      
+      // Add API key if provided
+      if (GRAPHHOPPER_API_KEY) {
+        params.append('key', GRAPHHOPPER_API_KEY);
+      }
+
+      const url = `${GRAPHHOPPER_BASE_URL}?${pointParams}&${params.toString()}`;
+      const needsProxy = window.location.protocol === 'file:';
+      const requestUrl = needsProxy ? `${CORS_PROXY}${encodeURIComponent(url)}` : url;
+
+      const fetchOptions = needsProxy ? {} : {
+        headers: {
+          "Content-Type": "application/json"
+        }
+      };
+
+      const response = await fetch(requestUrl, fetchOptions);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("GraphHopper error:", errorText);
+        throw new Error("GraphHopper request failed: " + response.status);
+      }
+
+      return response.json();
+    }
+
+    function drawRoute(points) {
+      // Clear previous route
+      if (currentRoute) {
+        currentRoute.remove();
+      }
+
+      // GraphHopper with points_encoded=false returns points as GeoJSON format
+      // {coordinates: [[lng, lat], [lng, lat], ...]} or sometimes just the array
+      let routeCoordinates = [];
+      
+      if (typeof points === 'string') {
+        // If points is an encoded polyline string, we'd need to decode it
+        // But with points_encoded=false, this shouldn't happen
+        console.warn("Encoded polyline format received but points_encoded=false was set");
+        return;
+      } else if (points && points.coordinates) {
+        // GeoJSON format: {coordinates: [[lng, lat], [lng, lat], ...]}
+        routeCoordinates = points.coordinates.map(coord => {
+          if (Array.isArray(coord) && coord.length >= 2) {
+            return [coord[1], coord[0]]; // Convert [lng, lat] to [lat, lng] for Leaflet
+          }
+          return null;
+        }).filter(Boolean);
+      } else if (Array.isArray(points)) {
+        // Direct array format: [[lng, lat], [lng, lat], ...] or [[lat, lng], [lat, lng], ...]
+        if (points.length > 0 && Array.isArray(points[0]) && points[0].length === 2) {
+          // Check if first coordinate looks like lng (typically larger absolute value) or lat
+          // For safety, assume GeoJSON format [lng, lat] and convert
+          routeCoordinates = points.map(p => [p[1], p[0]]); // Convert [lng, lat] to [lat, lng]
+        } else if (points.length > 0 && typeof points[0] === 'object' && points[0].lat !== undefined) {
+          routeCoordinates = points.map(p => [p.lat, p.lng]);
+        }
+      }
+
+      if (routeCoordinates.length === 0) {
+        console.warn("No valid route coordinates found. Points data:", points);
+        return;
+      }
+
+      // Create polyline
+      currentRoute = L.polyline(routeCoordinates, {
+        color: '#22c55e',
+        weight: 4,
+        opacity: 0.8,
+        smoothFactor: 1
+      }).addTo(map);
+
+      // Fit map to show the route
+      map.fitBounds(currentRoute.getBounds(), { padding: [50, 50] });
     }
 
     // ========= UI HELPERS =========
@@ -717,6 +914,7 @@
       // If the user has already typed an API key, keep using it;
       // otherwise we still load the map so geolocation works.
       OCM_API_KEY = ocmKeyInput.value.trim();
+      GRAPHHOPPER_API_KEY = graphhopperKeyInput.value.trim();
       loadOpenStreetMapView();
     });
   </script>
