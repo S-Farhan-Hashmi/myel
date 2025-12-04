@@ -429,12 +429,14 @@
         return;
       }
 
+      // API key is optional; without it, we still load the map and use
+      // Open Charge Map in free/unauthenticated mode for light usage.
       if (!OCM_API_KEY) {
-        statusMessage("Please paste your Open Charge Map API key first.", "error");
-        return;
+        statusMessage("Loading map without an API key (limited/unauthenticated mode)…", "neutral");
+      } else {
+        statusMessage("Loading OpenStreetMap view…", "neutral");
       }
 
-      statusMessage("Loading OpenStreetMap view…", "neutral");
       initLeafletMap();
     }
 
@@ -520,7 +522,7 @@
     // ========= RANGE + STATIONS HANDLER =========
     async function handleCalculate() {
       if (!mapInitialized || !map) {
-        statusMessage("Map is not ready yet. Please load the map with your API key first.", "error");
+        statusMessage("Map is not ready yet. Please load the map first.", "error");
         return;
       }
 
@@ -702,7 +704,21 @@
 
     // ========= EVENT LISTENER =========
     calculateBtn.addEventListener("click", handleCalculate);
-    loadMapBtn.addEventListener("click", loadOpenStreetMapView);
+    loadMapBtn.addEventListener("click", () => {
+      // Make sure we have the latest API key from the input, if any,
+      // then load the map (geolocation will be requested during init).
+      OCM_API_KEY = ocmKeyInput.value.trim();
+      loadOpenStreetMapView();
+    });
+
+    // Optionally auto-load the map and trigger geolocation on page load
+    // This will prompt the browser for location permission as soon as the page is opened.
+    window.addEventListener("load", () => {
+      // If the user has already typed an API key, keep using it;
+      // otherwise we still load the map so geolocation works.
+      OCM_API_KEY = ocmKeyInput.value.trim();
+      loadOpenStreetMapView();
+    });
   </script>
 
 </body>
