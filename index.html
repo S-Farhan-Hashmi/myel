@@ -321,31 +321,6 @@
       </div>
 
       <div class="form-group">
-        <label for="apiKeyInput" class="form-label">Open Charge Map API Key</label>
-        <input
-          id="apiKeyInput"
-          class="input"
-          type="text"
-          placeholder="Paste your Open Charge Map API key here"
-        />
-      </div>
-
-      <div class="form-group">
-        <label for="graphhopperKeyInput" class="form-label">GraphHopper API Key (Optional)</label>
-        <input
-          id="graphhopperKeyInput"
-          class="input"
-          type="text"
-          placeholder="Optional: For enhanced routing features"
-        />
-      </div>
-
-      <button id="loadMapBtn" class="button" style="margin-bottom: 0.5rem;">
-        <span class="button-icon">🗺️</span>
-        <span>Save Key &amp; Show Map</span>
-      </button>
-
-      <div class="form-group">
         <label for="carModel" class="form-label">Car Model</label>
         <select id="carModel" class="select">
           <option value="301">Audi e-tron SUV and Sportback (301 miles, 91 kWh)</option>
@@ -408,12 +383,13 @@
 
   <script>
     // ========= CONFIG =========
-    // Open Charge Map key is used for fetching charging station data.
-    // You paste it in the UI field and we store it here.
-    let OCM_API_KEY = '';
-    let GRAPHHOPPER_API_KEY = '';
+    // API keys are configured by the developer and are universal for all users
+    // Open Charge Map API key for fetching charging station data
+    const OCM_API_KEY = 'cee87b0b-429d-42d9-ab06-8c49a08b0929';
+    // GraphHopper API key for routing features
+    const GRAPHHOPPER_API_KEY = 'd0b14953-96df-4e6d-ae75-e6e4fc511a59';
     const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
-    // GraphHopper free tier endpoint (works without API key for basic routing)
+    // GraphHopper endpoint for routing
     const GRAPHHOPPER_BASE_URL = 'https://graphhopper.com/api/1/route';
 
     // ========= MAP / APP STATE =========
@@ -430,27 +406,6 @@
     const batteryInput = document.getElementById('batteryLevel');
     const carModelSelect = document.getElementById('carModel');
     const calculateBtn = document.getElementById('calculateBtn');
-    const loadMapBtn = document.getElementById('loadMapBtn');
-    const ocmKeyInput = document.getElementById('apiKeyInput');
-    const graphhopperKeyInput = document.getElementById('graphhopperKeyInput');
-
-    // Keep Open Charge Map key in sync with the input
-    ocmKeyInput.addEventListener('input', () => {
-      OCM_API_KEY = ocmKeyInput.value.trim();
-    });
-
-    // Keep GraphHopper key in sync with the input
-    graphhopperKeyInput.addEventListener('input', () => {
-      GRAPHHOPPER_API_KEY = graphhopperKeyInput.value.trim();
-    });
-
-    // Also allow pressing Enter in the API key field to show the map
-    ocmKeyInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        loadOpenStreetMapView();
-      }
-    });
 
     // ========= MAP INIT / LOADER =========
     function loadOpenStreetMapView() {
@@ -459,14 +414,7 @@
         return;
       }
 
-      // API key is optional; without it, we still load the map and use
-      // Open Charge Map in free/unauthenticated mode for light usage.
-      if (!OCM_API_KEY) {
-        statusMessage("Loading map without an API key (limited/unauthenticated mode)…", "neutral");
-      } else {
-        statusMessage("Loading OpenStreetMap view…", "neutral");
-      }
-
+      statusMessage("Loading OpenStreetMap view…", "neutral");
       initLeafletMap();
     }
 
@@ -911,20 +859,10 @@
 
     // ========= EVENT LISTENER =========
     calculateBtn.addEventListener("click", handleCalculate);
-    loadMapBtn.addEventListener("click", () => {
-      // Make sure we have the latest API key from the input, if any,
-      // then load the map (geolocation will be requested during init).
-      OCM_API_KEY = ocmKeyInput.value.trim();
-      loadOpenStreetMapView();
-    });
 
-    // Optionally auto-load the map and trigger geolocation on page load
+    // Auto-load the map and trigger geolocation on page load
     // This will prompt the browser for location permission as soon as the page is opened.
     window.addEventListener("load", () => {
-      // If the user has already typed an API key, keep using it;
-      // otherwise we still load the map so geolocation works.
-      OCM_API_KEY = ocmKeyInput.value.trim();
-      GRAPHHOPPER_API_KEY = graphhopperKeyInput.value.trim();
       loadOpenStreetMapView();
     });
   </script>
