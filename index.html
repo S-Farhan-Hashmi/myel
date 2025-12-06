@@ -13,6 +13,9 @@
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     crossorigin=""
   />
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
   <style>
     * {
@@ -391,6 +394,41 @@
     const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
     // GraphHopper endpoint for routing
     const GRAPHHOPPER_BASE_URL = 'https://graphhopper.com/api/1/route';
+    
+    // ========= FIREBASE REALTIME DATABASE CONFIG =========
+    // Google Firebase Realtime Database API key and configuration
+    // Replace 'YOUR_FIREBASE_API_KEY' with your actual Firebase API key
+    // You will also need: apiKey, authDomain, databaseURL, projectId, storageBucket, messagingSenderId, appId
+    const FIREBASE_CONFIG = {
+      apiKey: 'AIzaSyDAF5cDSgVwUog6mHYSSUCPywS4DF9FkoU', // Firebase API key
+      authDomain: 'el-project-e45df.firebaseapp.com', // Firebase Auth Domain
+      databaseURL: 'https://el-project-e45df-default-rtdb.asia-southeast1.firebasedatabase.app/', // Firebase Realtime Database URL
+      projectId: 'el-project-e45df', // Firebase Project ID
+      storageBucket: 'el-project-e45df.firebasestorage.app', // Firebase Storage Bucket
+      messagingSenderId: '633518271724', // Firebase Messaging Sender ID
+      appId: '1:633518271724:web:5267bdecf1756cd7ce89c9' // Firebase App ID
+    };
+    
+    // Initialize Firebase
+    let firebaseApp;
+    let firebaseDatabase;
+    
+    function initializeFirebase() {
+      try {
+        if (typeof firebase !== 'undefined') {
+          firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
+          firebaseDatabase = firebase.database();
+          console.log('Firebase Realtime Database initialized successfully');
+          return true;
+        } else {
+          console.error('Firebase SDK not loaded');
+          return false;
+        }
+      } catch (error) {
+        console.error('Error initializing Firebase:', error);
+        return false;
+      }
+    }
 
     // ========= MAP / APP STATE =========
     let map;
@@ -863,6 +901,8 @@
     // Auto-load the map and trigger geolocation on page load
     // This will prompt the browser for location permission as soon as the page is opened.
     window.addEventListener("load", () => {
+      // Initialize Firebase when page loads
+      initializeFirebase();
       loadOpenStreetMapView();
     });
   </script>
