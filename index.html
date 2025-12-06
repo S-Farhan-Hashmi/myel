@@ -373,6 +373,10 @@
         <span><span class="pill-dot"></span><span id="rangeInfo">Range: –</span></span>
         <span id="stationInfo">Stations: –</span>
       </div>
+      
+      <div class="meta-info" style="margin-top: 0.5rem;">
+        <span><span class="pill-dot" style="background: #f59e0b;"></span><span id="ultrasonic-display">Ultrasonic: –</span></span>
+      </div>
     </aside>
 
     <!-- Map -->
@@ -415,17 +419,89 @@
     
     function initializeFirebase() {
       try {
-        if (typeof firebase !== 'undefined') {
-          firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
-          firebaseDatabase = firebase.database();
-          console.log('Firebase Realtime Database initialized successfully');
-          return true;
-        } else {
-          console.error('Firebase SDK not loaded');
+        if (typeof firebase === 'undefined') {
+          console.error('Firebase SDK not loaded. Waiting...');
+          // Retry after a short delay
+          setTimeout(() => {
+            initializeFirebase();
+          }, 500);
           return false;
         }
+        
+        // Check if already initialized to avoid duplicate initialization
+        if (firebaseApp) {
+          console.log('Firebase already initialized');
+          return true;
+        }
+        
+        firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
+        firebaseDatabase = firebase.database();
+        console.log('Firebase Realtime Database initialized successfully');
+        
+        // Create reference to ultrasonic_cm path
+        const ultrasonicRef = firebaseDatabase.ref('ultrasonic_cm');
+        console.log('Firebase reference path: ultrasonic_cm');
+        console.log('Database URL:', FIREBASE_CONFIG.databaseURL);
+        
+        // Verify the display element exists
+        const displayEl = document.getElementById('ultrasonic-display');
+        if (!displayEl) {
+          console.error('CRITICAL: Display element with ID "ultrasonic-display" not found in DOM!');
+          console.log('Available elements:', document.querySelectorAll('[id*="ultrasonic"]'));
+        } else {
+          console.log('Display element found successfully');
+        }
+        
+        // on() immediately fires with the current value (last known value from database)
+        // This works even if ESP32 is offline - Firebase stores the last value
+        ultrasonicRef.on('value', (snapshot) => {
+          const ultrasonicValue = snapshot.val();
+          const displayEl = document.getElementById('ultrasonic-display');
+          
+          console.log('=== Firebase Data Received ===');
+          console.log('Snapshot exists:', snapshot.exists());
+          console.log('Snapshot value:', ultrasonicValue);
+          console.log('Value type:', typeof ultrasonicValue);
+          console.log('Display element found:', displayEl !== null);
+          
+          if (snapshot.exists() && ultrasonicValue !== null && ultrasonicValue !== undefined) {
+            // Display the value (works for both initial load and updates)
+            if (displayEl) {
+              displayEl.innerText = `Ultrasonic: ${ultrasonicValue} cm`;
+              console.log('✓ Successfully updated display with value:', ultrasonicValue);
+            } else {
+              console.error('✗ Display element not found when trying to update!');
+            }
+          } else {
+            console.log('No value in database (snapshot does not exist or value is null/undefined)');
+            if (displayEl) {
+              displayEl.innerText = 'Ultrasonic: –';
+            }
+          }
+        }, (error) => {
+          console.error('=== Firebase Error ===');
+          console.error('Error code:', error.code);
+          console.error('Error message:', error.message);
+          console.error('Full error:', error);
+          const displayEl = document.getElementById('ultrasonic-display');
+          if (displayEl) {
+            displayEl.innerText = 'Ultrasonic: Error';
+          }
+        });
+        
+        // Also try a one-time read to test connection
+        ultrasonicRef.once('value')
+          .then((snapshot) => {
+            console.log('One-time read successful. Value:', snapshot.val());
+          })
+          .catch((error) => {
+            console.error('One-time read failed:', error);
+          });
+        
+        return true;
       } catch (error) {
         console.error('Error initializing Firebase:', error);
+        console.error('Error stack:', error.stack);
         return false;
       }
     }
@@ -901,13 +977,27 @@
     // Auto-load the map and trigger geolocation on page load
     // This will prompt the browser for location permission as soon as the page is opened.
     window.addEventListener("load", () => {
-      // Initialize Firebase when page loads
-      initializeFirebase();
+      // Wait a bit for Firebase scripts to fully load, then initialize
+      setTimeout(() => {
+        initializeFirebase();
+      }, 100);
       loadOpenStreetMapView();
     });
+    
+    // Also try to initialize Firebase when DOM is ready (in case load event already fired)
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+          initializeFirebase();
+        }, 200);
+      });
+    } else {
+      // DOM already loaded, try initializing immediately
+      setTimeout(() => {
+        initializeFirebase();
+      }, 300);
+    }
   </script>
 
 </body>
 </html>
-
-
