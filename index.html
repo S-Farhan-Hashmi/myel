@@ -509,6 +509,23 @@
               ${live.RelayState != null ? `<div><strong>Relay:</strong> ${live.RelayState ? 'On' : 'Off'}</div>` : ''}
             </div>
           ` : ''}
+          <div style="margin-top: 0.5rem;">
+            <button id="routeBtn-firebase-${stationId}" style="
+              background: linear-gradient(135deg, #38bdf8, #22c55e);
+              color: #0b1120;
+              border: none;
+              border-radius: 6px;
+              padding: 0.4rem 0.8rem;
+              font-size: 0.8rem;
+              font-weight: 600;
+              cursor: pointer;
+              width: 100%;
+              transition: filter 0.2s;
+            " onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter='brightness(1)'">
+              🧭 Get Route
+            </button>
+          </div>
+          <div id="routeInfo-firebase-${stationId}" style="margin-top: 0.5rem; font-size: 0.75rem; color: #4b5563; display: none;"></div>
         </div>
       `;
     }
@@ -552,6 +569,17 @@
         const popupContent = createStationPopup(station, stationId);
         marker.setPopupContent(popupContent);
         
+        // Ensure route button handler is attached (in case it wasn't before)
+        marker.off('popupopen');
+        marker.on('popupopen', () => {
+          const routeBtn = document.getElementById(`routeBtn-firebase-${stationId}`);
+          if (routeBtn) {
+            routeBtn.addEventListener('click', () => {
+              calculateRouteToFirebaseStation(stationId, marker);
+            });
+          }
+        });
+        
         console.log(`✓ Updated marker for station ${stationId} - Status: ${status}`);
       } else {
         // Create new marker
@@ -563,6 +591,16 @@
 
         const popupContent = createStationPopup(station, stationId);
         marker.bindPopup(popupContent);
+        
+        // Add click handler for route button when popup opens
+        marker.on('popupopen', () => {
+          const routeBtn = document.getElementById(`routeBtn-firebase-${stationId}`);
+          if (routeBtn) {
+            routeBtn.addEventListener('click', () => {
+              calculateRouteToFirebaseStation(stationId, marker);
+            });
+          }
+        });
         
         // Store marker with station ID
         markerMap[stationId] = marker;
@@ -1256,6 +1294,76 @@
       } catch (err) {
         console.error("Route calculation error:", err);
         statusMessage("Failed to calculate route. Please try again.", "error");
+      }
+    }
+
+    // Route calculation for Firebase stations
+    async function calculateRouteToFirebaseStation(stationId, stationMarker) {
+      if (!userMarker) {
+        statusMessage("User location is not set. Cannot calculate route.", "error");
+        return;
+      }
+
+      const startPoint = userMarker.getLatLng();
+      const endPoint = stationMarker.getLatLng();
+
+      statusMessage("Calculating route...", "neutral");
+
+      try {
+        const routeData = await fetchRouteFromGraphHopper(
+          startPoint.lat,
+          startPoint.lng,
+          endPoint.lat,
+          endPoint.lng
+        );
+
+        if (routeData && routeData.paths && routeData.paths.length > 0) {
+          const path = routeData.paths[0];
+          const distanceKm = (path.distance / 1000).toFixed(2);
+          const distanceMiles = (distanceKm * 0.621371).toFixed(2);
+          const timeMinutes = Math.round(path.time / 60000);
+          const timeHours = Math.floor(timeMinutes / 60);
+          const timeMins = timeMinutes % 60;
+          const timeString = timeHours > 0 
+            ? `${timeHours}h ${timeMins}m` 
+            : `${timeMins}m`;
+
+          // Draw route on map
+          const points = path.points;
+          drawRoute(points);
+
+          // Update popup with route info
+          const routeInfoEl = document.getElementById(`routeInfo-firebase-${stationId}`);
+          if (routeInfoEl) {
+            routeInfoEl.style.display = 'block';
+            routeInfoEl.innerHTML = `
+              <div style="padding: 0.5rem; background: #f3f4f6; border-radius: 6px;">
+                <div style="font-weight: 600; margin-bottom: 0.3rem;">Route Information:</div>
+                <div>Distance: <strong>${distanceMiles} mi</strong> (${distanceKm} km)</div>
+                <div>Estimated Time: <strong>${timeString}</strong></div>
+              </div>
+            `;
+          }
+
+          statusMessage(`Route calculated: ${distanceMiles} mi, ${timeString}`, "success");
+        } else {
+          throw new Error("No route found");
+        }
+      } catch (err) {
+        console.error("Route calculation error:", err);
+        statusMessage("Failed to calculate route. Please try again.", "error");
+        
+        // Show error in popup
+        const routeInfoEl = document.getElementById(`routeInfo-firebase-${stationId}`);
+        if (routeInfoEl) {
+          routeInfoEl.style.display = 'block';
+          routeInfoEl.innerHTML = `
+            <div style="padding: 0.5rem; background: #fee2e2; border-radius: 6px; color: #991b1b;">
+              <div style="font-weight: 600;">Route calculation failed</div>
+              <div style="font-size: 0.75rem;">Please try again later</div>
+            </div>
+          `;
+        }
       }
     }
 
