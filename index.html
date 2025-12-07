@@ -402,8 +402,9 @@
     
     // ========= FIREBASE REALTIME DATABASE CONFIG =========
     // Google Firebase Realtime Database API key and configuration
-    // Replace 'YOUR_FIREBASE_API_KEY' with your actual Firebase API key
-    // You will also need: apiKey, authDomain, databaseURL, projectId, storageBucket, messagingSenderId, appId
+    // TODO: Update this config with your Firebase project credentials
+    // You will need: apiKey, authDomain, databaseURL, projectId, storageBucket, messagingSenderId, appId
+    // Get these from Firebase Console > Project Settings > General > Your apps
     const FIREBASE_CONFIG = {
       apiKey: 'AIzaSyDAF5cDSgVwUog6mHYSSUCPywS4DF9FkoU', // Firebase API key
       authDomain: 'el-project-e45df.firebaseapp.com', // Firebase Auth Domain
@@ -441,261 +442,15 @@
         console.log('Firebase Realtime Database initialized successfully');
         console.log('Database URL:', FIREBASE_CONFIG.databaseURL);
         
-        // Load stations from Firebase after initialization
-        // Wait a bit for map to be ready, then load stations
+        // Set up location listener after a short delay to ensure Firebase is ready
         setTimeout(() => {
-          loadStationsFromFirebase();
+          setupLocationListener();
         }, 1000);
         
-        // Verify the display element exists
-        const displayEl = document.getElementById('ultrasonic-display');
-        if (!displayEl) {
-          console.error('CRITICAL: Display element with ID "ultrasonic-display" not found in DOM!');
-          console.log('Available elements:', document.querySelectorAll('[id*="ultrasonic"]'));
-        } else {
-          console.log('Display element found successfully');
-        }
-        
-        // Try multiple possible paths where the data might be stored
-        const possiblePaths = [
-          'ultrasonic_cm',
-          '/ultrasonic_cm',
-          'ultrasonic',
-          '/ultrasonic',
-          'sensor/ultrasonic_cm',
-          'sensor/ultrasonic',
-          'data/ultrasonic_cm',
-          'data/ultrasonic'
-        ];
-        
-        let listenerAttached = false;
-        
-        // Function to try reading from a path
-        function tryPath(path) {
-          const ref = firebaseDatabase.ref(path);
-          console.log(`Trying path: "${path}"`);
-          
-          // First, try a one-time read to check if data exists
-          ref.once('value')
-            .then((snapshot) => {
-              const val = snapshot.val();
-              console.log(`Path "${path}" - Snapshot exists:`, snapshot.exists());
-              console.log(`Path "${path}" - Value:`, val);
-              console.log(`Path "${path}" - Value type:`, typeof val);
-              
-              if (snapshot.exists() && val !== null && val !== undefined) {
-                // Found data! Attach listener to this path
-                if (!listenerAttached) {
-                  listenerAttached = true;
-                  console.log(`✓ Found data at path: "${path}"`);
-                  
-                  // Attach real-time listener
-                  ref.on('value', (snapshot) => {
-                    const ultrasonicValue = snapshot.val();
-                    const displayEl = document.getElementById('ultrasonic-display');
-                    
-                    console.log('=== Firebase Data Update ===');
-                    console.log('Path:', path);
-                    console.log('Value:', ultrasonicValue);
-                    console.log('Value type:', typeof ultrasonicValue);
-                    
-                    // Handle different data structures
-                    let displayValue = null;
-                    
-                    if (typeof ultrasonicValue === 'number') {
-                      displayValue = ultrasonicValue;
-                    } else if (typeof ultrasonicValue === 'string') {
-                      const numValue = parseFloat(ultrasonicValue);
-                      if (!isNaN(numValue)) {
-                        displayValue = numValue;
-                      }
-                    } else if (typeof ultrasonicValue === 'object' && ultrasonicValue !== null) {
-                      // Check if it's an object with a value property
-                      if (ultrasonicValue.value !== undefined) {
-                        displayValue = typeof ultrasonicValue.value === 'number' 
-                          ? ultrasonicValue.value 
-                          : parseFloat(ultrasonicValue.value);
-                      } else if (ultrasonicValue.cm !== undefined) {
-                        displayValue = typeof ultrasonicValue.cm === 'number' 
-                          ? ultrasonicValue.cm 
-                          : parseFloat(ultrasonicValue.cm);
-                      } else {
-                        // Try to find any numeric value in the object
-                        const keys = Object.keys(ultrasonicValue);
-                        for (let key of keys) {
-                          const val = ultrasonicValue[key];
-                          if (typeof val === 'number' || (typeof val === 'string' && !isNaN(parseFloat(val)))) {
-                            displayValue = typeof val === 'number' ? val : parseFloat(val);
-                            console.log(`Found numeric value at key "${key}":`, displayValue);
-                            break;
-                          }
-                        }
-                      }
-                    }
-                    
-                    if (displayValue !== null && !isNaN(displayValue)) {
-                      if (displayEl) {
-                        displayEl.innerText = `Ultrasonic: ${displayValue} cm`;
-                        console.log('✓ Successfully updated display with value:', displayValue);
-                      } else {
-                        console.error('✗ Display element not found when trying to update!');
-                      }
-                    } else {
-                      console.log('Could not extract numeric value from:', ultrasonicValue);
-                      if (displayEl) {
-                        displayEl.innerText = 'Ultrasonic: –';
-                      }
-                    }
-                  }, (error) => {
-                    console.error('=== Firebase Listener Error ===');
-                    console.error('Error code:', error.code);
-                    console.error('Error message:', error.message);
-                    console.error('Full error:', error);
-                    const displayEl = document.getElementById('ultrasonic-display');
-                    if (displayEl) {
-                      displayEl.innerText = 'Ultrasonic: Error';
-                    }
-                  });
-                  
-                  // Update immediately with current value
-                  const currentVal = snapshot.val();
-                  let immediateValue = null;
-                  
-                  if (typeof currentVal === 'number') {
-                    immediateValue = currentVal;
-                  } else if (typeof currentVal === 'object' && currentVal !== null) {
-                    if (currentVal.value !== undefined) {
-                      immediateValue = typeof currentVal.value === 'number' ? currentVal.value : parseFloat(currentVal.value);
-                    } else if (currentVal.cm !== undefined) {
-                      immediateValue = typeof currentVal.cm === 'number' ? currentVal.cm : parseFloat(currentVal.cm);
-                    }
-                  }
-                  
-                  if (immediateValue !== null && !isNaN(immediateValue) && displayEl) {
-                    displayEl.innerText = `Ultrasonic: ${immediateValue} cm`;
-                  }
-                }
-              } else {
-                console.log(`Path "${path}" - No data found`);
-              }
-            })
-            .catch((error) => {
-              console.error(`Error reading path "${path}":`, error);
-            });
-        }
-        
-        // Try all possible paths
-        possiblePaths.forEach((path, index) => {
-          setTimeout(() => {
-            if (!listenerAttached) {
-              tryPath(path);
-            }
-          }, index * 200); // Stagger the requests
-        });
-        
-        // Read the root to find the actual key structure
-        firebaseDatabase.ref().once('value')
-          .then((snapshot) => {
-            const rootData = snapshot.val();
-            console.log('=== Root Database Structure ===');
-            if (rootData) {
-              const rootKeys = Object.keys(rootData);
-              console.log('Root keys found:', rootKeys);
-              console.log('Full root data:', rootData);
-              
-              // Try to find and use the actual key that contains data
-              for (let key of rootKeys) {
-                console.log(`Checking root key: "${key}"`);
-                const keyData = rootData[key];
-                console.log(`Key "${key}" value:`, keyData);
-                console.log(`Key "${key}" type:`, typeof keyData);
-                
-                // If this key has data, try to read from it
-                if (keyData !== null && keyData !== undefined) {
-                  // Try reading from this key directly
-                  const keyRef = firebaseDatabase.ref(key);
-                  keyRef.once('value')
-                    .then((keySnapshot) => {
-                      const val = keySnapshot.val();
-                      console.log(`✓ Found data at root key "${key}":`, val);
-                      
-                      // Extract the ultrasonic value from this key
-                      let displayValue = null;
-                      
-                      if (typeof val === 'number') {
-                        displayValue = val;
-                      } else if (typeof val === 'string') {
-                        displayValue = parseFloat(val);
-                      } else if (typeof val === 'object' && val !== null) {
-                        // Check nested structures
-                        if (val.ultrasonic_cm !== undefined) {
-                          displayValue = typeof val.ultrasonic_cm === 'number' ? val.ultrasonic_cm : parseFloat(val.ultrasonic_cm);
-                        } else if (val.value !== undefined) {
-                          displayValue = typeof val.value === 'number' ? val.value : parseFloat(val.value);
-                        } else if (val.cm !== undefined) {
-                          displayValue = typeof val.cm === 'number' ? val.cm : parseFloat(val.cm);
-                        } else {
-                          // Try to find any numeric value
-                          const subKeys = Object.keys(val);
-                          for (let subKey of subKeys) {
-                            const subVal = val[subKey];
-                            if (typeof subVal === 'number' || (typeof subVal === 'string' && !isNaN(parseFloat(subVal)))) {
-                              displayValue = typeof subVal === 'number' ? subVal : parseFloat(subVal);
-                              console.log(`Found numeric value at "${key}/${subKey}":`, displayValue);
-                              break;
-                            }
-                          }
-                        }
-                      }
-                      
-                      if (displayValue !== null && !isNaN(displayValue)) {
-                        const displayEl = document.getElementById('ultrasonic-display');
-                        if (displayEl) {
-                          displayEl.innerText = `Ultrasonic: ${displayValue} cm`;
-                          console.log(`✓ Successfully displayed value from root key "${key}":`, displayValue);
-                        }
-                        
-                        // Set up listener for this key
-                        if (!listenerAttached) {
-                          listenerAttached = true;
-                          keyRef.on('value', (updateSnapshot) => {
-                            const updateVal = updateSnapshot.val();
-                            let updateDisplayValue = null;
-                            
-                            if (typeof updateVal === 'number') {
-                              updateDisplayValue = updateVal;
-                            } else if (typeof updateVal === 'object' && updateVal !== null) {
-                              if (updateVal.ultrasonic_cm !== undefined) {
-                                updateDisplayValue = typeof updateVal.ultrasonic_cm === 'number' ? updateVal.ultrasonic_cm : parseFloat(updateVal.ultrasonic_cm);
-                              } else if (updateVal.value !== undefined) {
-                                updateDisplayValue = typeof updateVal.value === 'number' ? updateVal.value : parseFloat(updateVal.value);
-                              } else if (updateVal.cm !== undefined) {
-                                updateDisplayValue = typeof updateVal.cm === 'number' ? updateVal.cm : parseFloat(updateVal.cm);
-                              }
-                            }
-                            
-                            if (updateDisplayValue !== null && !isNaN(updateDisplayValue)) {
-                              const displayEl = document.getElementById('ultrasonic-display');
-                              if (displayEl) {
-                                displayEl.innerText = `Ultrasonic: ${updateDisplayValue} cm`;
-                              }
-                            }
-                          });
-                        }
-                      }
-                    })
-                    .catch((err) => {
-                      console.error(`Error reading key "${key}":`, err);
-                    });
-                }
-              }
-            } else {
-              console.log('No data found at root level');
-            }
-          })
-          .catch((error) => {
-            console.error('Error reading root:', error);
-          });
+        // Load stations from Firebase after initialization
+        setTimeout(() => {
+          loadStationsFromFirebase();
+        }, 1500);
         
         return true;
       } catch (error) {
@@ -705,202 +460,349 @@
       }
     }
 
-    // ========= LOAD STATIONS FROM FIREBASE =========
-    function loadStationsFromFirebase() {
-      if (!firebaseDatabase) {
-        console.error('Firebase database not initialized');
-        return;
-      }
-      
-      if (!map || !mapInitialized) {
-        console.log('Map not ready yet, will load stations after map initializes');
-        return;
-      }
-      
-      console.log('Loading stations from Firebase with real-time updates...');
-      const stationsRef = firebaseDatabase.ref('stations');
-      
-      // Use .on() instead of .once() for real-time updates
-      stationsRef.on('value', (snapshot) => {
-        const stationsData = snapshot.val();
-        console.log('=== Firebase Stations Data (Real-time Update) ===');
-        console.log('Full snapshot:', snapshot);
-        console.log('Stations data:', stationsData);
-        
-        if (!stationsData) {
-          console.log('No stations data found in Firebase');
-          return;
-        }
-        
-        // Convert object to array if needed
-        let stationsArray = [];
-        if (Array.isArray(stationsData)) {
-          stationsArray = stationsData;
-        } else if (typeof stationsData === 'object') {
-          // If it's an object, convert to array
-          stationsArray = Object.keys(stationsData).map(key => ({
-            ...stationsData[key],
-            ID: key // Preserve the key as ID
-          }));
-        }
-        
-        console.log('Processed stations array:', stationsArray);
-        console.log('Number of stations:', stationsArray.length);
-        
-        // Track which stations we've processed in this update
-        const processedStationIds = new Set();
-        
-        // Loop through each station and add/update markers
-        stationsArray.forEach((station, index) => {
-          console.log(`Processing station ${index}:`, station);
-          
-          // Get station ID
-          const stationId = station.ID || (typeof stationsData === 'object' ? Object.keys(stationsData)[index] : `firebase-${index}`);
-          processedStationIds.add(stationId);
-          
-          // Check if station has AddressInfo with coordinates
-          if (!station.AddressInfo) {
-            console.warn(`Station ${stationId} missing AddressInfo:`, station);
-            return;
-          }
-          
-          const { Latitude, Longitude } = station.AddressInfo;
-          
-          if (Latitude == null || Longitude == null) {
-            console.warn(`Station ${stationId} missing coordinates:`, station.AddressInfo);
-            return;
-          }
-          
-          // Check Status field
-          const status = station.Status || 'Unknown';
-          const isAvailable = status === 'Available';
-          
-          console.log(`Station ${stationId} - Status: ${status}, Available: ${isAvailable}`);
-          
-          // Check if marker already exists for this station
-          let marker = firebaseStationMarkers.get(stationId);
-          
-          if (marker) {
-            // Update existing marker
-            console.log(`Updating existing marker for station ${stationId}`);
-            // Update marker icon based on status
-            marker.setIcon(isAvailable ? greenIcon : redIcon);
-            // Update popup content
-            updateMarkerPopup(marker, station, isAvailable);
-          } else {
-            // Create new marker
-            console.log(`Adding new marker for station ${stationId} at:`, Latitude, Longitude);
-            
-            marker = L.marker([Latitude, Longitude], {
-              title: station.AddressInfo.Title || "Charging Station",
-              icon: isAvailable ? greenIcon : redIcon
-            }).addTo(map);
-            
-            // Create and bind popup
-            updateMarkerPopup(marker, station, isAvailable);
-            
-            // Store marker in map
-            firebaseStationMarkers.set(stationId, marker);
-            stationMarkers.push(marker);
-          }
-        });
-        
-        // Remove markers for stations that no longer exist in Firebase
-        firebaseStationMarkers.forEach((marker, stationId) => {
-          if (!processedStationIds.has(stationId)) {
-            console.log(`Removing marker for deleted station: ${stationId}`);
-            map.removeLayer(marker);
-            firebaseStationMarkers.delete(stationId);
-            const index = stationMarkers.indexOf(marker);
-            if (index > -1) {
-              stationMarkers.splice(index, 1);
-            }
-          }
-        });
-        
-        console.log(`Successfully processed ${stationsArray.length} stations from Firebase`);
-        
-        // Fit map to show all stations if any were added and user location is set
-        if (stationsArray.length > 0 && userMarker) {
-          const bounds = L.latLngBounds([userMarker.getLatLng()]);
-          stationsArray.forEach((station) => {
-            if (station.AddressInfo && station.AddressInfo.Latitude && station.AddressInfo.Longitude) {
-              bounds.extend([station.AddressInfo.Latitude, station.AddressInfo.Longitude]);
-            }
-          });
-          map.fitBounds(bounds, { padding: [50, 50] });
-        }
-      }, (error) => {
-        console.error('Error loading stations from Firebase:', error);
-        console.error('Error details:', error.code, error.message);
+    // ========= FIREBASE STATIONS LOADING =========
+    // Helper function to get marker color based on status
+    function getMarkerColor(status) {
+      // Green for "Available", red for all other statuses
+      return status === 'Available' ? '#22c55e' : '#ef4444';
+    }
+
+    // Helper function to create marker icon based on status
+    function createStationIcon(status) {
+      const color = getMarkerColor(status);
+      return L.divIcon({
+        className: 'firebase-station-marker',
+        html: `<div style="background-color: ${color}; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 10px;">⚡</div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
       });
     }
-    
-    // Helper function to update marker popup content
-    function updateMarkerPopup(marker, station, isAvailable) {
-      const addressParts = [
-        station.AddressInfo.AddressLine1,
-        station.AddressInfo.Town,
-        station.AddressInfo.StateOrProvince,
-        station.AddressInfo.Postcode
-      ].filter(Boolean);
-      
-      const usageCost = station.UsageCost || "See provider for details";
-      const status = station.Status || 'Unknown';
-      const statusColor = isAvailable ? '#22c55e' : '#ef4444';
-      
-      const infoHtml = `
-        <div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 260px;">
-          <div style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.2rem;">
-            ${escapeHtml(station.AddressInfo.Title || "Charging Station")}
+
+    // Helper function to create popup content
+    function createStationPopup(station, stationId) {
+      const info = station.Info || {};
+      const live = station.Live || {};
+      const title = info.Title || info.title || `Station ${stationId}`;
+      const uuid = info.UUID || info.uuid;
+      const status = live.Status || 'Unknown';
+      const statusColor = status === 'Available' ? '#22c55e' : '#ef4444';
+
+      return `
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 260px;">
+          <div style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.3rem; color: #1f2937;">
+            ${escapeHtml(title)}
           </div>
-          <div style="font-size: 0.82rem; color: #4b5563; margin-bottom: 0.35rem;">
-            ${escapeHtml(addressParts.join(", ") || "Address not available")}
+          <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.2rem;">
+            <strong>Station ID:</strong> ${stationId}
           </div>
-          <div style="font-size: 0.82rem; color: #111827; margin-bottom: 0.35rem;">
-            <strong>Status:</strong> <span style="color: ${statusColor}; font-weight: 600;">${escapeHtml(status)}</span>
-          </div>
-          ${station.Distance ? `<div style="font-size: 0.82rem; color: #111827; margin-bottom: 0.35rem;">
-            <strong>Distance:</strong> ${escapeHtml(station.Distance)} cm
+          ${uuid ? `<div style="font-size: 0.75rem; color: #9ca3af; margin-bottom: 0.2rem;">
+            <strong>UUID:</strong> ${escapeHtml(uuid)}
           </div>` : ''}
-          ${station.Threshold_cm ? `<div style="font-size: 0.82rem; color: #111827; margin-bottom: 0.35rem;">
-            <strong>Threshold:</strong> ${escapeHtml(station.Threshold_cm)} cm
-          </div>` : ''}
-          <div style="font-size: 0.82rem; color: #111827; margin-bottom: 0.35rem;">
-            <strong>Usage cost:</strong> ${escapeHtml(usageCost)}
-          </div>
-          <div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.5rem;">
-            <em>Source: Firebase (Real-time)</em>
-          </div>
+          ${live ? `
+            <div style="font-size: 0.8rem; color: #6b7280; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e5e7eb;">
+              <div style="margin-bottom: 0.3rem;">
+                <strong>Status:</strong> 
+                <span style="color: ${statusColor}; font-weight: 600;">${escapeHtml(status)}</span>
+              </div>
+              ${live.Distance != null ? `<div><strong>Distance:</strong> ${live.Distance} cm</div>` : ''}
+              ${live.ActiveSource ? `<div><strong>Source:</strong> ${escapeHtml(live.ActiveSource)}</div>` : ''}
+              ${live.RelayState != null ? `<div><strong>Relay:</strong> ${live.RelayState ? 'On' : 'Off'}</div>` : ''}
+            </div>
+          ` : ''}
         </div>
       `;
+    }
+
+    // Helper function to create or update a station marker
+    function createOrUpdateStationMarker(station, stationId, markerMap) {
+      if (!station || !station.Info) {
+        console.warn(`Station ${stationId} missing Info node`);
+        return null;
+      }
+
+      const info = station.Info;
+      const lat = info.Latitude || info.latitude;
+      const lng = info.Longitude || info.longitude;
+      const live = station.Live || {};
+      const status = live.Status || 'Unknown';
+
+      // Validate coordinates
+      if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) {
+        console.warn(`Station ${stationId} missing or invalid Latitude/Longitude`);
+        return null;
+      }
+
+      const latNum = typeof lat === 'string' ? parseFloat(lat) : lat;
+      const lngNum = typeof lng === 'string' ? parseFloat(lng) : lng;
+
+      if (isNaN(latNum) || isNaN(lngNum)) {
+        console.warn(`Station ${stationId} has invalid coordinates: ${lat}, ${lng}`);
+        return null;
+      }
+
+      // Check if marker already exists for this station ID
+      let marker = markerMap[stationId];
+
+      if (marker) {
+        // Update existing marker
+        const newIcon = createStationIcon(status);
+        marker.setIcon(newIcon);
+        
+        // Update popup content
+        const popupContent = createStationPopup(station, stationId);
+        marker.setPopupContent(popupContent);
+        
+        console.log(`✓ Updated marker for station ${stationId} - Status: ${status}`);
+      } else {
+        // Create new marker
+        const stationIcon = createStationIcon(status);
+        marker = L.marker([latNum, lngNum], {
+          title: info.Title || info.title || `Station ${stationId}`,
+          icon: stationIcon
+        }).addTo(map);
+
+        const popupContent = createStationPopup(station, stationId);
+        marker.bindPopup(popupContent);
+        
+        // Store marker with station ID
+        markerMap[stationId] = marker;
+        console.log(`✓ Created marker for station ${stationId} - Status: ${status}`);
+      }
+
+      return marker;
+    }
+
+    // Load all stations from Firebase 'stations' node and create markers
+    function loadStationsFromFirebase() {
+      if (!firebaseDatabase) {
+        console.log('Firebase database not initialized yet, retrying...');
+        setTimeout(() => loadStationsFromFirebase(), 500);
+        return;
+      }
+
+      if (!mapInitialized || !map) {
+        console.log('Map not initialized yet, retrying...');
+        setTimeout(() => loadStationsFromFirebase(), 500);
+        return;
+      }
+
+      console.log('Loading stations from Firebase...');
+      const stationsRef = firebaseDatabase.ref('stations');
       
-      marker.bindPopup(infoHtml);
+      // Use a Map to track markers by station ID for efficient updates
+      if (!window.firebaseStationMarkerMap) {
+        window.firebaseStationMarkerMap = {};
+      }
+      
+      stationsRef.once('value')
+        .then((snapshot) => {
+          if (!snapshot.exists()) {
+            console.log('No stations found in Firebase');
+            return;
+          }
+
+          const stationsData = snapshot.val();
+          const stationIds = Object.keys(stationsData);
+          console.log(`Found ${stationIds.length} station(s) in Firebase`);
+
+          // Create or update markers for all stations
+          stationIds.forEach((stationId) => {
+            const station = stationsData[stationId];
+            createOrUpdateStationMarker(station, stationId, window.firebaseStationMarkerMap);
+          });
+
+          const markerCount = Object.keys(window.firebaseStationMarkerMap).length;
+          console.log(`✓ Created/updated ${markerCount} marker(s) for Firebase stations`);
+
+          // Set up real-time listener for station updates
+          stationsRef.on('value', (updateSnapshot) => {
+            if (!updateSnapshot.exists()) {
+              // Remove all markers if stations node is deleted
+              Object.values(window.firebaseStationMarkerMap).forEach(marker => {
+                if (marker) marker.remove();
+              });
+              window.firebaseStationMarkerMap = {};
+              return;
+            }
+
+            const updatedStations = updateSnapshot.val();
+            const updatedStationIds = Object.keys(updatedStations);
+            const currentMarkerIds = Object.keys(window.firebaseStationMarkerMap);
+
+            // Remove markers for stations that no longer exist
+            currentMarkerIds.forEach((stationId) => {
+              if (!updatedStationIds.includes(stationId)) {
+                const marker = window.firebaseStationMarkerMap[stationId];
+                if (marker) {
+                  marker.remove();
+                  delete window.firebaseStationMarkerMap[stationId];
+                  console.log(`✗ Removed marker for station ${stationId}`);
+                }
+              }
+            });
+
+            // Add or update markers for existing/new stations
+            updatedStationIds.forEach((stationId) => {
+              const station = updatedStations[stationId];
+              createOrUpdateStationMarker(station, stationId, window.firebaseStationMarkerMap);
+            });
+          });
+        })
+        .catch((error) => {
+          console.error('Error loading stations from Firebase:', error);
+        });
+    }
+
+    // ========= FIREBASE LOCATION FUNCTIONS =========
+    // Function to update the Firebase location marker on the map
+    function updateFirebaseLocationMarker(lat, lng, title) {
+      if (!mapInitialized || !map) {
+        console.log('Map not initialized yet, will set marker when map is ready');
+        // Retry after a short delay
+        setTimeout(() => updateFirebaseLocationMarker(lat, lng, title), 500);
+        return;
+      }
+      
+      const latLng = [lat, lng];
+      
+      // Remove existing marker if it exists
+      if (firebaseLocationMarker) {
+        firebaseLocationMarker.remove();
+      }
+      
+      // Create new marker with custom orange icon
+      try {
+        const orangeIcon = L.divIcon({
+          className: 'firebase-location-marker',
+          html: '<div style="background-color: #f59e0b; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+        
+        firebaseLocationMarker = L.marker(latLng, {
+          title: title || 'EV Station Location',
+          icon: orangeIcon
+        }).addTo(map);
+      } catch (error) {
+        console.error('Error creating custom icon, using default:', error);
+        // Fallback to default icon
+        firebaseLocationMarker = L.marker(latLng, {
+          title: title || 'EV Station Location'
+        }).addTo(map);
+      }
+      
+      firebaseLocationMarker.bindTooltip(title || 'EV Station Location', { direction: 'top' });
+      
+      console.log(`✓ Firebase location marker updated: ${lat}, ${lng}`);
+      
+      // Optionally center map on the location
+      if (userMarker) {
+        // If user location exists, fit bounds to show both
+        const bounds = L.latLngBounds([userMarker.getLatLng(), latLng]);
+        map.fitBounds(bounds, { padding: [50, 50] });
+      } else {
+        // Otherwise, center on Firebase location
+        map.setView(latLng, 12);
+      }
+    }
+
+    // Read location data from Firebase "info" node (previously "address")
+    function setupLocationListener() {
+      if (!firebaseDatabase) {
+        console.log('Firebase database not initialized yet');
+        setTimeout(() => setupLocationListener(), 500);
+        return;
+      }
+
+      // Try multiple possible paths for the info node
+      const locationPaths = [
+        'info',
+        '/info',
+        'data/info',
+        'sensor/info'
+      ];
+      
+      // Also try reading from root keys that might contain info
+      firebaseDatabase.ref().once('value')
+        .then((snapshot) => {
+          const rootData = snapshot.val();
+          if (rootData) {
+            const rootKeys = Object.keys(rootData);
+            
+            // Try each root key with /info appended
+            rootKeys.forEach(key => {
+              locationPaths.push(`${key}/info`);
+              locationPaths.push(`${key}/Info`);
+            });
+            
+            // Try reading from each path
+            locationPaths.forEach((path, index) => {
+              setTimeout(() => {
+                const locationRef = firebaseDatabase.ref(path);
+                locationRef.once('value')
+                  .then((locationSnapshot) => {
+                    if (locationSnapshot.exists()) {
+                      const locationData = locationSnapshot.val();
+                      console.log(`✓ Found location data at path: "${path}"`, locationData);
+                      
+                      // Extract latitude and longitude
+                      let lat = null;
+                      let lng = null;
+                      let title = null;
+                      
+                      if (locationData && typeof locationData === 'object') {
+                        lat = locationData.Latitude || locationData.latitude || locationData.Lat || locationData.lat;
+                        lng = locationData.Longitude || locationData.longitude || locationData.Lng || locationData.lng;
+                        title = locationData.Title || locationData.title || 'EV Station Location';
+                        
+                        // Convert to numbers if they're strings
+                        if (typeof lat === 'string') lat = parseFloat(lat);
+                        if (typeof lng === 'string') lng = parseFloat(lng);
+                        
+                        if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
+                          updateFirebaseLocationMarker(lat, lng, title);
+                          
+                          // Set up real-time listener for location updates
+                          locationRef.on('value', (updateSnapshot) => {
+                            const updateData = updateSnapshot.val();
+                            if (updateData && typeof updateData === 'object') {
+                              let updateLat = updateData.Latitude || updateData.latitude || updateData.Lat || updateData.lat;
+                              let updateLng = updateData.Longitude || updateData.longitude || updateData.Lng || updateData.lng;
+                              let updateTitle = updateData.Title || updateData.title || 'EV Station Location';
+                              
+                              if (typeof updateLat === 'string') updateLat = parseFloat(updateLat);
+                              if (typeof updateLng === 'string') updateLng = parseFloat(updateLng);
+                              
+                              if (updateLat !== null && updateLng !== null && !isNaN(updateLat) && !isNaN(updateLng)) {
+                                updateFirebaseLocationMarker(updateLat, updateLng, updateTitle);
+                              }
+                            }
+                          });
+                        }
+                      }
+                    }
+                  })
+                  .catch((err) => {
+                    // Silently fail for paths that don't exist
+                    console.log(`Path "${path}" does not exist or error:`, err.message);
+                  });
+              }, index * 100);
+            });
+          }
+        })
+        .catch((error) => {
+          console.error('Error reading root for location:', error);
+        });
     }
 
     // ========= MAP / APP STATE =========
     let map;
     let mapInitialized = false;
     let userMarker = null;
+    let firebaseLocationMarker = null;
     let rangeCircle = null;
     let stationMarkers = [];
-    let firebaseStationMarkers = new Map(); // Track Firebase markers by station ID
     let currentRoute = null;
-    
-    // Create colored marker icons
-    const greenIcon = L.divIcon({
-      className: 'custom-marker',
-      html: '<div style="background-color: #22c55e; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
-      iconSize: [20, 20],
-      iconAnchor: [10, 10]
-    });
-    
-    const redIcon = L.divIcon({
-      className: 'custom-marker',
-      html: '<div style="background-color: #ef4444; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
-      iconSize: [20, 20],
-      iconAnchor: [10, 10]
-    });
 
     const statusEl = document.getElementById('status');
     const rangeInfoEl = document.getElementById('rangeInfo');
@@ -940,11 +842,6 @@
       mapInitialized = true;
       statusMessage("OpenStreetMap view ready. Trying to locate you…", "success");
       locateUser(defaultLocation);
-      
-      // Load stations from Firebase after map is ready
-      if (firebaseDatabase) {
-        loadStationsFromFirebase();
-      }
     }
 
     // ========= GEOLOCATION =========
