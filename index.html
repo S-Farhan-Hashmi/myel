@@ -392,7 +392,7 @@
     // ========= CONFIG =========
     // API keys are configured by the developer and are universal for all users
     // Open Charge Map API key for fetching charging station data
-    const OCM_API_KEY = 'cee87b0b-429d-42d9-ab06-8c49a08b0929';
+    const OCM_API_KEY = '485c6801-fc29-4323-b54f-7b979346cfa6';
     // GraphHopper API key for routing features
     const GRAPHHOPPER_API_KEY = 'd0b14953-96df-4e6d-ae75-e6e4fc511a59';
     // Multiple CORS proxy options as fallbacks (only used if direct fetch fails)
@@ -444,6 +444,12 @@
         firebaseDatabase = firebase.database(firebaseApp, FIREBASE_CONFIG.databaseURL);
         console.log('Firebase Realtime Database initialized successfully');
         console.log('Database URL:', FIREBASE_CONFIG.databaseURL);
+        
+        // Load stations from Firebase after initialization
+        // Wait a bit for map to be ready, then load stations
+        setTimeout(() => {
+          loadStationsFromFirebase();
+        }, 1000);
         
         // Verify the display element exists
         const displayEl = document.getElementById('ultrasonic-display');
@@ -703,13 +709,202 @@
       }
     }
 
+    // ========= LOAD STATIONS FROM FIREBASE =========
+    function loadStationsFromFirebase() {
+      if (!firebaseDatabase) {
+        console.error('Firebase database not initialized');
+        return;
+      }
+      
+      if (!map || !mapInitialized) {
+        console.log('Map not ready yet, will load stations after map initializes');
+        return;
+      }
+      
+      console.log('Loading stations from Firebase with real-time updates...');
+      const stationsRef = firebaseDatabase.ref('stations');
+      
+      // Use .on() instead of .once() for real-time updates
+      stationsRef.on('value', (snapshot) => {
+        const stationsData = snapshot.val();
+        console.log('=== Firebase Stations Data (Real-time Update) ===');
+        console.log('Full snapshot:', snapshot);
+        console.log('Stations data:', stationsData);
+        
+        if (!stationsData) {
+          console.log('No stations data found in Firebase');
+          return;
+        }
+        
+        // Convert object to array if needed
+        let stationsArray = [];
+        if (Array.isArray(stationsData)) {
+          stationsArray = stationsData;
+        } else if (typeof stationsData === 'object') {
+          // If it's an object, convert to array
+          stationsArray = Object.keys(stationsData).map(key => ({
+            ...stationsData[key],
+            ID: key // Preserve the key as ID
+          }));
+        }
+        
+        console.log('Processed stations array:', stationsArray);
+        console.log('Number of stations:', stationsArray.length);
+        
+        // Track which stations we've processed in this update
+        const processedStationIds = new Set();
+        
+        // Loop through each station and add/update markers
+        stationsArray.forEach((station, index) => {
+          console.log(`Processing station ${index}:`, station);
+          
+          // Get station ID
+          const stationId = station.ID || (typeof stationsData === 'object' ? Object.keys(stationsData)[index] : `firebase-${index}`);
+          processedStationIds.add(stationId);
+          
+          // Check if station has AddressInfo with coordinates
+          if (!station.AddressInfo) {
+            console.warn(`Station ${stationId} missing AddressInfo:`, station);
+            return;
+          }
+          
+          const { Latitude, Longitude } = station.AddressInfo;
+          
+          if (Latitude == null || Longitude == null) {
+            console.warn(`Station ${stationId} missing coordinates:`, station.AddressInfo);
+            return;
+          }
+          
+          // Check Status field
+          const status = station.Status || 'Unknown';
+          const isAvailable = status === 'Available';
+          
+          console.log(`Station ${stationId} - Status: ${status}, Available: ${isAvailable}`);
+          
+          // Check if marker already exists for this station
+          let marker = firebaseStationMarkers.get(stationId);
+          
+          if (marker) {
+            // Update existing marker
+            console.log(`Updating existing marker for station ${stationId}`);
+            // Update marker icon based on status
+            marker.setIcon(isAvailable ? greenIcon : redIcon);
+            // Update popup content
+            updateMarkerPopup(marker, station, isAvailable);
+          } else {
+            // Create new marker
+            console.log(`Adding new marker for station ${stationId} at:`, Latitude, Longitude);
+            
+            marker = L.marker([Latitude, Longitude], {
+              title: station.AddressInfo.Title || "Charging Station",
+              icon: isAvailable ? greenIcon : redIcon
+            }).addTo(map);
+            
+            // Create and bind popup
+            updateMarkerPopup(marker, station, isAvailable);
+            
+            // Store marker in map
+            firebaseStationMarkers.set(stationId, marker);
+            stationMarkers.push(marker);
+          }
+        });
+        
+        // Remove markers for stations that no longer exist in Firebase
+        firebaseStationMarkers.forEach((marker, stationId) => {
+          if (!processedStationIds.has(stationId)) {
+            console.log(`Removing marker for deleted station: ${stationId}`);
+            map.removeLayer(marker);
+            firebaseStationMarkers.delete(stationId);
+            const index = stationMarkers.indexOf(marker);
+            if (index > -1) {
+              stationMarkers.splice(index, 1);
+            }
+          }
+        });
+        
+        console.log(`Successfully processed ${stationsArray.length} stations from Firebase`);
+        
+        // Fit map to show all stations if any were added and user location is set
+        if (stationsArray.length > 0 && userMarker) {
+          const bounds = L.latLngBounds([userMarker.getLatLng()]);
+          stationsArray.forEach((station) => {
+            if (station.AddressInfo && station.AddressInfo.Latitude && station.AddressInfo.Longitude) {
+              bounds.extend([station.AddressInfo.Latitude, station.AddressInfo.Longitude]);
+            }
+          });
+          map.fitBounds(bounds, { padding: [50, 50] });
+        }
+      }, (error) => {
+        console.error('Error loading stations from Firebase:', error);
+        console.error('Error details:', error.code, error.message);
+      });
+    }
+    
+    // Helper function to update marker popup content
+    function updateMarkerPopup(marker, station, isAvailable) {
+      const addressParts = [
+        station.AddressInfo.AddressLine1,
+        station.AddressInfo.Town,
+        station.AddressInfo.StateOrProvince,
+        station.AddressInfo.Postcode
+      ].filter(Boolean);
+      
+      const usageCost = station.UsageCost || "See provider for details";
+      const status = station.Status || 'Unknown';
+      const statusColor = isAvailable ? '#22c55e' : '#ef4444';
+      
+      const infoHtml = `
+        <div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 260px;">
+          <div style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.2rem;">
+            ${escapeHtml(station.AddressInfo.Title || "Charging Station")}
+          </div>
+          <div style="font-size: 0.82rem; color: #4b5563; margin-bottom: 0.35rem;">
+            ${escapeHtml(addressParts.join(", ") || "Address not available")}
+          </div>
+          <div style="font-size: 0.82rem; color: #111827; margin-bottom: 0.35rem;">
+            <strong>Status:</strong> <span style="color: ${statusColor}; font-weight: 600;">${escapeHtml(status)}</span>
+          </div>
+          ${station.Distance ? `<div style="font-size: 0.82rem; color: #111827; margin-bottom: 0.35rem;">
+            <strong>Distance:</strong> ${escapeHtml(station.Distance)} km
+          </div>` : ''}
+          ${station.Threshold_cm ? `<div style="font-size: 0.82rem; color: #111827; margin-bottom: 0.35rem;">
+            <strong>Threshold:</strong> ${escapeHtml(station.Threshold_cm)} cm
+          </div>` : ''}
+          <div style="font-size: 0.82rem; color: #111827; margin-bottom: 0.35rem;">
+            <strong>Usage cost:</strong> ${escapeHtml(usageCost)}
+          </div>
+          <div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.5rem;">
+            <em>Source: Firebase (Real-time)</em>
+          </div>
+        </div>
+      `;
+      
+      marker.bindPopup(infoHtml);
+    }
+
     // ========= MAP / APP STATE =========
     let map;
     let mapInitialized = false;
     let userMarker = null;
     let rangeCircle = null;
     let stationMarkers = [];
+    let firebaseStationMarkers = new Map(); // Track Firebase markers by station ID
     let currentRoute = null;
+    
+    // Create colored marker icons
+    const greenIcon = L.divIcon({
+      className: 'custom-marker',
+      html: '<div style="background-color: #22c55e; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
+      iconSize: [20, 20],
+      iconAnchor: [10, 10]
+    });
+    
+    const redIcon = L.divIcon({
+      className: 'custom-marker',
+      html: '<div style="background-color: #ef4444; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
+      iconSize: [20, 20],
+      iconAnchor: [10, 10]
+    });
 
     const statusEl = document.getElementById('status');
     const rangeInfoEl = document.getElementById('rangeInfo');
@@ -749,6 +944,11 @@
       mapInitialized = true;
       statusMessage("OpenStreetMap view ready. Trying to locate you…", "success");
       locateUser(defaultLocation);
+      
+      // Load stations from Firebase after map is ready
+      if (firebaseDatabase) {
+        loadStationsFromFirebase();
+      }
     }
 
     // ========= GEOLOCATION =========
