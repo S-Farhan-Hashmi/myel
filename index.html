@@ -480,12 +480,25 @@
 
     // Helper function to create popup content
     function createStationPopup(station, stationId) {
-      const info = station.Info || {};
+      const addressInfo = station.AddressInfo || station.Info || {};
       const live = station.Live || {};
-      const title = info.Title || info.title || `Station ${stationId}`;
-      const uuid = info.UUID || info.uuid;
-      const status = live.Status || 'Unknown';
+      const title =
+        addressInfo.Title ||
+        addressInfo.title ||
+        station.Title ||
+        (station.Config && (station.Config.ID || station.Config.Id)) ||
+        `Station ${stationId}`;
+      const uuid =
+        station.UUID ||
+        live.UUID ||
+        addressInfo.UUID ||
+        addressInfo.uuid;
+      const status = live.Status || live.status || station.Status || station.status || 'Unknown';
       const statusColor = status === 'Available' ? '#22c55e' : '#ef4444';
+      const distance = live.Distance != null ? live.Distance : station.Distance;
+      const threshold =
+        station.Threshold_cm ||
+        (station.Config && (station.Config.ThresholdCM || station.Config.thresholdCM));
 
       return `
         <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 260px;">
@@ -504,9 +517,10 @@
                 <strong>Status:</strong> 
                 <span style="color: ${statusColor}; font-weight: 600;">${escapeHtml(status)}</span>
               </div>
-              ${live.Distance != null ? `<div><strong>Distance:</strong> ${live.Distance} cm</div>` : ''}
+              ${distance != null ? `<div><strong>Distance:</strong> ${distance} cm</div>` : ''}
               ${live.ActiveSource ? `<div><strong>Source:</strong> ${escapeHtml(live.ActiveSource)}</div>` : ''}
               ${live.RelayState != null ? `<div><strong>Relay:</strong> ${live.RelayState ? 'On' : 'Off'}</div>` : ''}
+              ${threshold != null ? `<div><strong>Threshold:</strong> ${threshold} cm</div>` : ''}
             </div>
           ` : ''}
           <div style="margin-top: 0.5rem;">
@@ -532,16 +546,16 @@
 
     // Helper function to create or update a station marker
     function createOrUpdateStationMarker(station, stationId, markerMap) {
-      if (!station || !station.Info) {
-        console.warn(`Station ${stationId} missing Info node`);
+      if (!station) {
+        console.warn(`Station ${stationId} missing station data`);
         return null;
       }
 
-      const info = station.Info;
-      const lat = info.Latitude || info.latitude;
-      const lng = info.Longitude || info.longitude;
+      const addressInfo = station.AddressInfo || station.Info || {};
       const live = station.Live || {};
-      const status = live.Status || 'Unknown';
+      const lat = addressInfo.Latitude || addressInfo.latitude;
+      const lng = addressInfo.Longitude || addressInfo.longitude;
+      const status = live.Status || live.status || station.Status || station.status || 'Unknown';
 
       // Validate coordinates
       if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) {
@@ -585,7 +599,11 @@
         // Create new marker
         const stationIcon = createStationIcon(status);
         marker = L.marker([latNum, lngNum], {
-          title: info.Title || info.title || `Station ${stationId}`,
+          title:
+            addressInfo.Title ||
+            addressInfo.title ||
+            (station.Config && (station.Config.ID || station.Config.Id)) ||
+            `Station ${stationId}`,
           icon: stationIcon
         }).addTo(map);
 
